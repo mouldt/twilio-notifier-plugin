@@ -41,6 +41,13 @@ import com.twilio.sdk.TwilioRestException;
 import com.twilio.sdk.resource.factory.CallFactory;
 import com.twilio.sdk.resource.factory.SmsFactory;
 import com.twilio.sdk.resource.instance.Account;
+import org.apache.http.HttpHost;
+import org.apache.http.HttpVersion;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.conn.params.ConnRoutePNames;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
 
 /**
  * A {@link TwilioNotifier} is a {@link Notifier} that uses the Rest API of
@@ -289,6 +296,34 @@ public class TwilioNotifier extends Notifier {
         return this.userList;
     }
 
+    private DefaultHttpClient createHttpClient()
+    {
+        final int CONNECTION_TIMEOUT = 10000;
+
+        ThreadSafeClientConnManager connMgr = new ThreadSafeClientConnManager();
+	connMgr.setDefaultMaxPerRoute(10);
+        DefaultHttpClient httpclient = new DefaultHttpClient(connMgr);
+	httpclient.getParams().setParameter("http.protocol.version", HttpVersion.HTTP_1_1);
+	httpclient.getParams().setParameter("http.socket.timeout",new Integer(CONNECTION_TIMEOUT));
+        httpclient.getParams().setParameter("http.connection.timeout", new Integer(CONNECTION_TIMEOUT));
+	httpclient.getParams().setParameter("http.protocol.content-charset", "UTF-8");
+        
+        // now add any proxy
+        DescriptorImpl descriptor = getDescriptor();
+        String proxyHost = descriptor.getProxyHost();
+        if (proxyHost != null && proxyHost.length()>0)
+        {
+            int proxyPort = descriptor.getProxyPort();
+            String proxyUsername = descriptor.getProxyUsername();
+            if (proxyUsername != null && proxyUsername.length()>0)
+                httpclient.getCredentialsProvider().setCredentials(new AuthScope(proxyHost, proxyPort), new UsernamePasswordCredentials(proxyUsername, descriptor.getProxyPassword()));
+
+            HttpHost proxy = new HttpHost(proxyHost, proxyPort);
+            httpclient.getParams().setParameter(ConnRoutePNames.DEFAULT_PROXY, proxy);
+        }
+        return httpclient;
+    }
+    
     @Override
     public boolean perform(final AbstractBuild<?, ?> build, final Launcher launcher, final BuildListener listener) {
 
@@ -298,6 +333,7 @@ public class TwilioNotifier extends Notifier {
             if (shouldNotify(build)) {
                 final TwilioRestClient client = new TwilioRestClient(getDescriptor().getAccountSID(), getDescriptor()
                         .getAuthToken());
+                client.setHttpclient(createHttpClient());
                 listener.getLogger().println("Created twilio client");
 
                 if (build != null) {
@@ -547,6 +583,11 @@ public class TwilioNotifier extends Notifier {
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
         private static final Logger LOGGER = Logger.getLogger(DescriptorImpl.class.getName());
 
+        public String proxyHost;
+        public int proxyPort;
+        public String proxyUsername;
+        public String proxyPassword;
+        
         public String accountsid;
         public String authtoken;
 
@@ -567,6 +608,10 @@ public class TwilioNotifier extends Notifier {
         public boolean configure(final StaplerRequest req, final JSONObject formData) throws FormException {
             // set the booleans to false as defaults
 
+            this.proxyHost = formData.getString("proxyHost");
+            this.proxyPort = Integer.parseInt(formData.getString("proxyPort"));
+            this.proxyUsername = formData.getString("proxyUsername");
+            this.proxyPassword = formData.getString("proxyPassword");
             this.accountsid = formData.getString("accountSID");
             this.authtoken = formData.getString("authtoken");
             this.fromPhoneNumber = formData.getString("fromPhoneNumber");
@@ -579,6 +624,22 @@ public class TwilioNotifier extends Notifier {
             return "TwilioNotifier";
         }
 
+        public String getProxyHost() {
+            return this.proxyHost;
+        }
+        
+        public int getProxyPort() {
+            return this.proxyPort;
+        }
+        
+        public String getProxyUsername() {
+            return this.proxyUsername;
+        }
+        
+        public String getProxyPassword() {
+            return this.proxyPassword;
+        }
+        
         public String getAccountSID() {
             return this.accountsid;
         }
@@ -605,6 +666,18 @@ public class TwilioNotifier extends Notifier {
             }
             return super.newInstance(req, formData);
         }
+        
+        public FormValidation doCheckProxyPort(@QueryParameter final String value) {
+            try{
+                Integer.parseInt(value);
+            }
+            catch (NumberFormatException ex)
+            {
+                return FormValidation.error("Must be numeric!");                
+            }
+            return FormValidation.ok();
+        }
+
     }
 
 }

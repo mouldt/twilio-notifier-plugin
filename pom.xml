@@ -148,9 +148,9 @@
   </build>
   <dependencies>
     <dependency>
-      <groupId>com.twilio</groupId>
-      <artifactId>sdk</artifactId>
-      <version>3.0</version>
+      <groupId>com.twilio.sdk</groupId>
+      <artifactId>twilio-client</artifactId>
+      <version>3.3.8</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
